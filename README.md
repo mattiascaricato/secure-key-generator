@@ -68,6 +68,12 @@ Roll a physical d6 and type the results (100+ rolls, digits 1-6, spaces ok).
 [0/100] > 4526 1355 2641 ...
 ```
 
+## Tests
+```sh
+pip3 install pytest
+python3 -m pytest
+```
+
 ## Disclaimer
 This is a small script, not an audited product. Read the code before trusting it with real funds. Whoever has the seed phrase or private key controls the funds, and the output is printed in plaintext. Use at your own risk.
 
