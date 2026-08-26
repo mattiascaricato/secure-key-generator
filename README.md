@@ -42,7 +42,6 @@ Both modes draw from the same mixed 256 bits. In private key mode, keys outside 
 ## Requirements
 - AWS credentials configured
 - Python 3
-- AWS CLI (one-liner only)
 
 ## Dependencies
 ```sh
@@ -57,25 +56,6 @@ python3 generate_key.py
 # raw secp256k1 private key + Ethereum address
 python3 generate_key.py --pk
 ```
-
-## One-liner (private key mode)
-The KMS bytes are piped via stdin (never passed as a command-line argument, which would be visible to other processes via `ps`) and mixed with local entropy in-process:
-
-```sh
-aws kms generate-random --number-of-bytes 32 --query Plaintext --output text | python3 -c "
-import sys, base64, secrets
-from eth_keys import keys
-kms = base64.b64decode(sys.stdin.read())
-assert len(kms) == 32
-key = bytes(a ^ b for a, b in zip(kms, secrets.token_bytes(32)))
-assert 1 <= int.from_bytes(key, 'big') < 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-pk = keys.PrivateKey(key)
-print('Private Key:', key.hex())
-print('Wallet Address:', pk.public_key.to_checksum_address())
-"
-```
-
-(The range assert fails with probability ~2⁻¹²⁸; just rerun if you ever hit it.)
 
 ## Disclaimer
 This is a small script, not an audited product. Read the code before trusting it with real funds. Whoever has the seed phrase or private key controls the funds, and the output is printed in plaintext. Use at your own risk.
