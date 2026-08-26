@@ -1,5 +1,5 @@
 # secure-key-generator ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
-Generate strong, exportable crypto secrets by mixing AWS KMS entropy with the local CSPRNG. Two modes: a 24-word BIP-39 seed phrase (importable by any wallet, any chain) or a raw secp256k1 private key.
+A BIP-39 seed phrase generator and crypto private key generator with strong, exportable entropy: AWS KMS randomness XOR-mixed with the local CSPRNG. Two modes: a 24-word BIP-39 mnemonic (importable by any wallet on Ethereum, Bitcoin, Solana, or any BIP39/BIP32 chain) or a raw secp256k1 private key.
 
 - **Entropy mixing**: the secret is `KMS_bytes XOR local_bytes`, computed locally. Neither AWS nor a flawed local RNG alone can determine it.
 - **Seed phrase mode (default)**: 24-word BIP-39 mnemonic, 256 bits of entropy. Works with Ethereum, Bitcoin, Solana, or anything that speaks BIP-39/BIP-32.
