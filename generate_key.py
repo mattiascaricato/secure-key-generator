@@ -2,9 +2,13 @@ import argparse
 import hashlib
 import secrets
 import sys
-import termios
 import time
-import tty
+
+try:
+    import termios
+    import tty
+except ImportError:  # non-Unix: keyboard mode unavailable, dice mode still works
+    termios = tty = None
 
 from eth_keys import keys
 from mnemonic import Mnemonic
@@ -41,6 +45,8 @@ def collect_keyboard_entropy():
         tty.setcbreak(fd)
         for i in range(MIN_KEYSTROKES):
             ch = sys.stdin.read(1)
+            if not ch:
+                raise EOFError("stdin closed during keystroke collection")
             samples.append(f"{ch!r}:{time.perf_counter_ns()}")
             print(f"\r  {i + 1}/{MIN_KEYSTROKES}", end="", flush=True)
     finally:
@@ -49,6 +55,7 @@ def collect_keyboard_entropy():
     return hashlib.sha256("|".join(samples).encode()).digest()
 
 def choose_entropy_source():
+    """Prompt for the second entropy source and collect it."""
     print("Second entropy source to mix with the OS CSPRNG:")
     print("  1) dice rolls (recommended, provable entropy)")
     print("  2) keyboard mashing (no props, entropy not provable)")
@@ -57,6 +64,9 @@ def choose_entropy_source():
         if choice == "1":
             return collect_dice_entropy()
         if choice == "2":
+            if termios is None:
+                print("Keyboard mode needs a Unix terminal; use dice rolls.")
+                continue
             return collect_keyboard_entropy()
         print("Type 1 or 2.")
 
@@ -64,6 +74,8 @@ def mix_entropy(user_bytes):
     """XOR the user-collected 32 bytes with the OS CSPRNG. The result is at least
     as strong as the strongest of the two sources, so a flawed kernel RNG and
     weak dice/keystrokes must BOTH happen to weaken the secret."""
+    if len(user_bytes) != 32:
+        raise ValueError(f"user entropy must be 32 bytes, got {len(user_bytes)}")
     return bytes(a ^ b for a, b in zip(user_bytes, secrets.token_bytes(32)))
 
 def is_valid_private_key(key_bytes):
@@ -92,12 +104,15 @@ def main():
     parser.add_argument("--pk", action="store_true", help="generate a raw secp256k1 private key instead of a seed phrase")
     args = parser.parse_args()
 
-    user_bytes = choose_entropy_source()
-
-    if args.pk:
-        generate_private_key(user_bytes)
-    else:
-        generate_seed_phrase(user_bytes)
+    try:
+        user_bytes = choose_entropy_source()
+        if args.pk:
+            generate_private_key(user_bytes)
+        else:
+            generate_seed_phrase(user_bytes)
+    except (EOFError, KeyboardInterrupt):
+        print("\nAborted.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

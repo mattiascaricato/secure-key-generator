@@ -40,6 +40,12 @@ class TestMixEntropy:
         user = bytes(32)
         assert generate_key.mix_entropy(user) != generate_key.mix_entropy(user)
 
+    def test_rejects_wrong_length_input(self):
+        with pytest.raises(ValueError):
+            generate_key.mix_entropy(bytes(16))
+        with pytest.raises(ValueError):
+            generate_key.mix_entropy(bytes(33))
+
 
 class TestCollectDiceEntropy:
     def test_hashes_concatenated_rolls(self, monkeypatch):
@@ -65,21 +71,35 @@ class TestCollectDiceEntropy:
         assert generate_key.collect_dice_entropy() == hashlib.sha256((short + "2").encode()).digest()
 
 
-class TestCollectKeyboardEntropy:
-    def test_returns_deterministic_hash_of_keys_and_timings(self, monkeypatch):
-        chars = iter("a" * generate_key.MIN_KEYSTROKES)
+@pytest.fixture
+def fake_tty(monkeypatch):
+    """Install a fake stdin/termios/tty; returns the list of restored settings.
 
+    Call with the function each fake keystroke read should invoke."""
+    def _install(read_fn):
         class FakeStdin:
             def fileno(self):
                 return 0
 
             def read(self, n):
-                return next(chars)
+                return read_fn()
 
+        restored = []
         monkeypatch.setattr(generate_key.sys, "stdin", FakeStdin())
         monkeypatch.setattr(generate_key.termios, "tcgetattr", lambda fd: "old")
-        monkeypatch.setattr(generate_key.termios, "tcsetattr", lambda fd, when, attrs: None)
+        monkeypatch.setattr(
+            generate_key.termios, "tcsetattr", lambda fd, when, attrs: restored.append(attrs)
+        )
         monkeypatch.setattr(generate_key.tty, "setcbreak", lambda fd: None)
+        return restored
+
+    return _install
+
+
+class TestCollectKeyboardEntropy:
+    def test_returns_deterministic_hash_of_keys_and_timings(self, monkeypatch, fake_tty):
+        chars = iter("a" * generate_key.MIN_KEYSTROKES)
+        fake_tty(lambda: next(chars))
         monkeypatch.setattr(generate_key.time, "perf_counter_ns", lambda: 12345)
 
         expected = hashlib.sha256(
@@ -87,24 +107,18 @@ class TestCollectKeyboardEntropy:
         ).digest()
         assert generate_key.collect_keyboard_entropy() == expected
 
-    def test_restores_terminal_settings_on_error(self, monkeypatch):
-        restored = []
+    def test_restores_terminal_settings_on_error(self, fake_tty):
+        def raise_interrupt():
+            raise KeyboardInterrupt
 
-        class FakeStdin:
-            def fileno(self):
-                return 0
-
-            def read(self, n):
-                raise KeyboardInterrupt
-
-        monkeypatch.setattr(generate_key.sys, "stdin", FakeStdin())
-        monkeypatch.setattr(generate_key.termios, "tcgetattr", lambda fd: "old")
-        monkeypatch.setattr(
-            generate_key.termios, "tcsetattr", lambda fd, when, attrs: restored.append(attrs)
-        )
-        monkeypatch.setattr(generate_key.tty, "setcbreak", lambda fd: None)
-
+        restored = fake_tty(raise_interrupt)
         with pytest.raises(KeyboardInterrupt):
+            generate_key.collect_keyboard_entropy()
+        assert restored == ["old"]
+
+    def test_raises_on_stdin_eof(self, fake_tty):
+        restored = fake_tty(lambda: "")
+        with pytest.raises(EOFError):
             generate_key.collect_keyboard_entropy()
         assert restored == ["old"]
 
@@ -125,6 +139,13 @@ class TestChooseEntropySource:
         monkeypatch.setattr("builtins.input", lambda _: next(answers))
         monkeypatch.setattr(generate_key, "collect_keyboard_entropy", lambda: b"k" * 32)
         assert generate_key.choose_entropy_source() == b"k" * 32
+
+    def test_keyboard_unavailable_without_termios(self, monkeypatch):
+        answers = iter(["2", "1"])
+        monkeypatch.setattr("builtins.input", lambda _: next(answers))
+        monkeypatch.setattr(generate_key, "termios", None)
+        monkeypatch.setattr(generate_key, "collect_dice_entropy", lambda: b"d" * 32)
+        assert generate_key.choose_entropy_source() == b"d" * 32
 
 
 class TestGenerateSeedPhrase:
@@ -168,3 +189,14 @@ class TestMain:
         monkeypatch.setattr(generate_key, "mix_entropy", lambda user: bytes(31) + b"\x01")
         generate_key.main()
         assert "Wallet Address: " in capsys.readouterr().out
+
+    def test_aborts_cleanly_on_eof(self, monkeypatch, capsys):
+        def raise_eof():
+            raise EOFError
+
+        monkeypatch.setattr(generate_key.sys, "argv", ["generate_key.py"])
+        monkeypatch.setattr(generate_key, "choose_entropy_source", raise_eof)
+        with pytest.raises(SystemExit) as exc:
+            generate_key.main()
+        assert exc.value.code == 1
+        assert "Aborted." in capsys.readouterr().out

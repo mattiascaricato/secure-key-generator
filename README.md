@@ -6,7 +6,7 @@ A BIP-39 seed phrase generator and crypto private key generator with strong, exp
 - **Seed phrase mode (default)**: 24-word BIP-39 mnemonic, 256 bits of entropy.
 - **Private key mode (`--pk`)**: standalone secp256k1 key, validated against the curve order, with its Ethereum checksum address.
 - **No network, no cloud, no accounts.** Runs on an air-gapped machine.
-- Minimal dependencies: eth-keys, mnemonic.
+- Minimal dependencies: eth-keys, eth-hash, mnemonic.
 
 ## Why mix entropy
 Key generators usually trust a single source of randomness, and local RNGs have failed in the real world: Debian's OpenSSL bug (2008) shipped keys with 15 bits of effective entropy for two years, and Android's SecureRandom flaw (2013) led to actual Bitcoin thefts from wallets generated on-device.
@@ -41,7 +41,7 @@ Practical notes:
 Both modes draw from the same mixed 256 bits. Your rolls are collected once; in private key mode, keys outside the valid secp256k1 range are rejected and re-mixed with fresh OS bytes (probability ~2^-128, so effectively never).
 
 ## Requirements
-- Python 3 (Unix terminal; keyboard mode uses termios)
+- Python 3 (keyboard mode needs a Unix terminal; dice mode runs anywhere)
 
 ## Dependencies
 ```sh
