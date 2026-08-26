@@ -1,3 +1,5 @@
+import secrets
+
 import boto3
 from eth_keys import keys
 
@@ -7,35 +9,34 @@ SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD036
 # Initialize AWS KMS client
 kms_client = boto3.client("kms")
 
-def generate_random_32_bytes():
-    """Generate 32 random bytes using AWS KMS with boto3."""
-    response = kms_client.generate_random(NumberOfBytes=32)
-    raw_bytes = response["Plaintext"]
+def generate_key_bytes():
+    """Generate 32 key bytes by XOR-mixing AWS KMS entropy with the local CSPRNG.
 
-    if not raw_bytes or len(raw_bytes) != 32:
+    The result is at least as strong as the strongest of the two sources, so
+    neither AWS nor a flawed local RNG alone can determine the key.
+    """
+    kms_bytes = kms_client.generate_random(NumberOfBytes=32)["Plaintext"]
+
+    if not kms_bytes or len(kms_bytes) != 32:
         raise ValueError("Failed to generate valid random bytes from KMS")
 
-    return raw_bytes.hex()
+    local_bytes = secrets.token_bytes(32)
+    return bytes(a ^ b for a, b in zip(kms_bytes, local_bytes))
 
-def is_valid_private_key(hex_key):
+def is_valid_private_key(key_bytes):
     """Checks if the private key is within the valid SECP256K1 range: 1 ≤ key < curve order (prevents invalid keys)."""
-    key_int = int(hex_key, 16)
+    key_int = int.from_bytes(key_bytes, "big")
     return 1 <= key_int < SECP256K1_ORDER
 
 def main():
-    try:
-        while True:
-            private_key = generate_random_32_bytes()
-            if is_valid_private_key(private_key):
-                pk = keys.PrivateKey(bytes.fromhex(private_key))
-                public_key = pk.public_key
-                address = public_key.to_checksum_address()
-                print(f"Private Key: {private_key}")
-                print(f"Wallet Address: {address}")
-                break
-    except Exception as e:
-        print(f"Error generating wallet: {str(e)}")
-        raise
+    while True:
+        key_bytes = generate_key_bytes()
+        if is_valid_private_key(key_bytes):
+            pk = keys.PrivateKey(key_bytes)
+            address = pk.public_key.to_checksum_address()
+            print(f"Private Key: {key_bytes.hex()}")
+            print(f"Wallet Address: {address}")
+            break
 
 if __name__ == "__main__":
     main()
