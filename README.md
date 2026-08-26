@@ -2,7 +2,7 @@
 A BIP-39 seed phrase generator and crypto private key generator with strong, exportable entropy: the OS CSPRNG XOR-mixed with physical dice rolls or keystroke timing. Fully offline, air-gap friendly. Two modes: a 24-word BIP-39 mnemonic (importable by any wallet on Ethereum, Bitcoin, Solana, or any BIP39/BIP32 chain) or a raw secp256k1 private key.
 
 - **Entropy mixing**: the secret is `os_bytes XOR SHA256(your_input)`, computed locally. Neither a flawed kernel RNG nor weak rolls alone can determine it.
-- **Physical second source**: ~100 d6 rolls (provable entropy) or keyboard mashing (no props). The script prompts you to pick.
+- **Physical second source**: ~100 d6 rolls (provable entropy, given honest dice and real rolls) or keyboard mashing (no props). The script prompts you to pick.
 - **Seed phrase mode (default)**: 24-word BIP-39 mnemonic, 256 bits of entropy.
 - **Private key mode (`--pk`)**: standalone secp256k1 key, validated against the curve order, with its Ethereum checksum address.
 - **No network, no cloud, no accounts.** Runs on an air-gapped machine.
@@ -15,7 +15,7 @@ Mixing fixes the single point of failure. XOR-ing two independent sources means 
 
 Practical notes:
 
-- Dice rolls give provable entropy: 100 d6 rolls carry more than the 256 bits the key needs. Keyboard mashing is the propless fallback; its entropy is real but not quantifiable.
+- Dice rolls give provable entropy if the rolls are honest: 100 real d6 rolls carry more than the 256 bits the key needs (the script can't tell real rolls from typed patterns; a lazy input just leaves the key resting on the OS CSPRNG alone). Keyboard mashing is the propless fallback; its entropy is real but not quantifiable.
 - Everything runs offline. No network calls, no cloud account, no audit trail that a secret was generated.
 - The secret is printed to stdout. Run this locally, and mind terminal scrollback, tmux logging, and CI logs.
 - No mixing scheme survives a compromised machine: whatever computes the key sees the key. For large amounts, generate on a clean, offline machine.
