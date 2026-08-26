@@ -1,44 +1,85 @@
 import argparse
+import hashlib
 import secrets
+import sys
+import termios
+import time
+import tty
 
-import boto3
 from eth_keys import keys
 from mnemonic import Mnemonic
 
 # Order of secp256k1 (fixed curve parameter)
 SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
-# Initialize AWS KMS client
-kms_client = boto3.client("kms")
+# log2(6) ≈ 2.58 bits per d6 roll → 100 rolls ≥ 256 bits
+MIN_DICE_ROLLS = 100
+MIN_KEYSTROKES = 100
 
-def generate_entropy():
-    """Generate 32 entropy bytes by XOR-mixing AWS KMS entropy with the local CSPRNG.
+def collect_dice_entropy():
+    """Collect ≥100 physical d6 rolls and hash them into 32 bytes."""
+    print(f"Roll a physical d6 and type the results ({MIN_DICE_ROLLS}+ rolls, digits 1-6, spaces ok).")
+    print("Press Enter between batches; the counter shows progress.")
+    rolls = ""
+    while len(rolls) < MIN_DICE_ROLLS:
+        line = input(f"[{len(rolls)}/{MIN_DICE_ROLLS}] > ").replace(" ", "").strip()
+        if not line:
+            continue
+        if not set(line) <= set("123456"):
+            print("Only digits 1-6.")
+            continue
+        rolls += line
+    return hashlib.sha256(rolls.encode()).digest()
 
-    The result is at least as strong as the strongest of the two sources, so
-    neither AWS nor a flawed local RNG alone can determine the secret.
-    """
-    kms_bytes = kms_client.generate_random(NumberOfBytes=32)["Plaintext"]
+def collect_keyboard_entropy():
+    """Collect keystroke timing jitter: 100 keypresses, hashed with their nanosecond timestamps."""
+    print(f"Mash the keyboard randomly, varying rhythm, until the counter completes ({MIN_KEYSTROKES} keystrokes).")
+    samples = []
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        for i in range(MIN_KEYSTROKES):
+            ch = sys.stdin.read(1)
+            samples.append(f"{ch!r}:{time.perf_counter_ns()}")
+            print(f"\r  {i + 1}/{MIN_KEYSTROKES}", end="", flush=True)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    print()
+    return hashlib.sha256("|".join(samples).encode()).digest()
 
-    if not kms_bytes or len(kms_bytes) != 32:
-        raise ValueError("Failed to generate valid random bytes from KMS")
+def choose_entropy_source():
+    print("Second entropy source to mix with the OS CSPRNG:")
+    print("  1) dice rolls (recommended, provable entropy)")
+    print("  2) keyboard mashing (no props, entropy not provable)")
+    while True:
+        choice = input("Choice [1/2]: ").strip()
+        if choice == "1":
+            return collect_dice_entropy()
+        if choice == "2":
+            return collect_keyboard_entropy()
+        print("Type 1 or 2.")
 
-    local_bytes = secrets.token_bytes(32)
-    return bytes(a ^ b for a, b in zip(kms_bytes, local_bytes))
+def mix_entropy(user_bytes):
+    """XOR the user-collected 32 bytes with the OS CSPRNG. The result is at least
+    as strong as the strongest of the two sources, so a flawed kernel RNG and
+    weak dice/keystrokes must BOTH happen to weaken the secret."""
+    return bytes(a ^ b for a, b in zip(user_bytes, secrets.token_bytes(32)))
 
 def is_valid_private_key(key_bytes):
     """Checks if the private key is within the valid SECP256K1 range: 1 ≤ key < curve order (prevents invalid keys)."""
     key_int = int.from_bytes(key_bytes, "big")
     return 1 <= key_int < SECP256K1_ORDER
 
-def generate_seed_phrase():
+def generate_seed_phrase(user_bytes):
     """Generate a 24-word BIP-39 mnemonic (256 bits of mixed entropy)."""
-    words = Mnemonic("english").to_mnemonic(generate_entropy())
+    words = Mnemonic("english").to_mnemonic(mix_entropy(user_bytes))
     print(f"Seed Phrase: {words}")
 
-def generate_private_key():
+def generate_private_key(user_bytes):
     """Generate a standalone secp256k1 private key and its Ethereum address."""
     while True:
-        key_bytes = generate_entropy()
+        key_bytes = mix_entropy(user_bytes)
         if is_valid_private_key(key_bytes):
             pk = keys.PrivateKey(key_bytes)
             address = pk.public_key.to_checksum_address()
@@ -47,14 +88,16 @@ def generate_private_key():
             break
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate a BIP-39 seed phrase or a secp256k1 private key from KMS+local mixed entropy.")
+    parser = argparse.ArgumentParser(description="Generate a BIP-39 seed phrase or a secp256k1 private key from OS CSPRNG entropy mixed with dice rolls or keystroke timing.")
     parser.add_argument("--pk", action="store_true", help="generate a raw secp256k1 private key instead of a seed phrase")
     args = parser.parse_args()
 
+    user_bytes = choose_entropy_source()
+
     if args.pk:
-        generate_private_key()
+        generate_private_key(user_bytes)
     else:
-        generate_seed_phrase()
+        generate_seed_phrase(user_bytes)
 
 if __name__ == "__main__":
     main()
