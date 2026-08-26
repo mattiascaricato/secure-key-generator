@@ -1,18 +1,18 @@
-# secure-ethereum-private-key-generator ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
-Securely generate cryptographically strong, exportable Ethereum private keys by mixing AWS KMS entropy with the local CSPRNG. Ensures secp256k1 elliptic curve compliance.
+# secure-key-generator ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
+Generate strong, exportable crypto secrets by mixing AWS KMS entropy with the local CSPRNG. Two modes: a 24-word BIP-39 seed phrase (importable by any wallet, any chain) or a raw secp256k1 private key.
 
-- **Entropy mixing**: XORs **AWS KMS** randomness with the local CSPRNG (`secrets`), so neither AWS nor a flawed local RNG alone can determine the key.
-- Filters out invalid keys exceeding **secp256k1** elliptic curve limits.
-- Simple **script** or **one-liner CLI command**.
-- Minimal dependencies: **boto3** and **eth-keys** (the one-liner also uses the **AWS CLI**).
+- **Entropy mixing**: the secret is `KMS_bytes XOR local_bytes`, computed locally. Neither AWS nor a flawed local RNG alone can determine it.
+- **Seed phrase mode (default)**: 24-word BIP-39 mnemonic, 256 bits of entropy. Works with Ethereum, Bitcoin, Solana, or anything that speaks BIP-39/BIP-32.
+- **Private key mode (`--pk`)**: standalone secp256k1 key, validated against the curve order, with its Ethereum checksum address.
+- Minimal dependencies: boto3, eth-keys, mnemonic.
 
 ## Threat model
-The key is meant to be exported (printed) for use in a wallet, so the goal is strong entropy, not HSM custody:
+The output is meant to be exported (printed) for use in a wallet, so the goal is strong entropy, not HSM custody:
 
-- AWS only ever sees its half of the entropy. The final key is `KMS_bytes XOR local_bytes`, computed locally — compromising the key requires compromising *both* sources.
-- KMS `GenerateRandom` calls are logged in CloudTrail (event metadata only, not the bytes), so your AWS account keeps a timestamped record that a key was generated.
-- The key is printed to stdout: run this locally, and mind terminal scrollback, tmux logging, and CI logs.
-- If you want a key that never exists outside an HSM instead, use a KMS asymmetric key (`ECC_SECG_P256K1`) and sign inside KMS — different tool, different goal.
+- AWS only ever sees its half of the entropy. Compromising the secret requires compromising both sources.
+- KMS `GenerateRandom` calls are logged in CloudTrail (event metadata only, not the bytes), so your AWS account keeps a timestamped record that a secret was generated.
+- The secret is printed to stdout. Run this locally, and mind terminal scrollback, tmux logging, and CI logs.
+- If you want a key that never exists outside an HSM instead, use a KMS asymmetric key (`ECC_SECG_P256K1`) and sign inside KMS. Different tool, different goal.
 
 ## Requirements
 - AWS credentials configured
@@ -26,10 +26,14 @@ pip3 install -r requirements.txt
 
 ## Usage
 ```sh
-python3 generate_eth_pk.py
+# 24-word BIP-39 seed phrase (default)
+python3 generate_key.py
+
+# raw secp256k1 private key + Ethereum address
+python3 generate_key.py --pk
 ```
 
-## One-liner-command
+## One-liner (private key mode)
 The KMS bytes are piped via stdin (never passed as a command-line argument, which would be visible to other processes via `ps`) and mixed with local entropy in-process:
 
 ```sh
@@ -49,4 +53,4 @@ print('Wallet Address:', pk.public_key.to_checksum_address())
 (The range assert fails with probability ~2⁻¹²⁸; just rerun if you ever hit it.)
 
 ## License
-[MIT](https://github.com/mattiascaricato/secure-ethereum-private-key-generator/blob/main/LICENSE)
+[MIT](https://github.com/mattiascaricato/secure-key-generator/blob/main/LICENSE)
