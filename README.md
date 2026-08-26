@@ -7,12 +7,11 @@ Generate strong, exportable crypto secrets by mixing AWS KMS entropy with the lo
 - Minimal dependencies: boto3, eth-keys, mnemonic.
 
 ## Threat model
-The output is meant to be exported (printed) for use in a wallet, so the goal is strong entropy, not HSM custody:
+The output is meant to be exported (printed) for use in a wallet, so the goal is strong entropy:
 
 - AWS only ever sees its half of the entropy. Compromising the secret requires compromising both sources.
 - KMS `GenerateRandom` calls are logged in CloudTrail (event metadata only, not the bytes), so your AWS account keeps a timestamped record that a secret was generated.
 - The secret is printed to stdout. Run this locally, and mind terminal scrollback, tmux logging, and CI logs.
-- If you want a key that never exists outside an HSM instead, use a KMS asymmetric key (`ECC_SECG_P256K1`) and sign inside KMS. Different tool, different goal.
 
 ## Requirements
 - AWS credentials configured
