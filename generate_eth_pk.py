@@ -1,10 +1,8 @@
 import boto3
-from ecdsa.curves import SECP256k1
 from eth_keys import keys
 
-# Get the order of secp256k1
-# 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-SECP256K1_ORDER = SECP256k1.order
+# Order of secp256k1 (fixed curve parameter)
+SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
 # Initialize AWS KMS client
 kms_client = boto3.client("kms")
